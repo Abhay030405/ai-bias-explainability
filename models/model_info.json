@@ -1,0 +1,12 @@
+{
+  "feature_names": [
+    "age",
+    "income",
+    "loan_amount",
+    "credit_score",
+    "employment_years",
+    "debt_to_income"
+  ],
+  "model_type": "XGBoostClassifier",
+  "trained_date": "2025-10-22 23:11:07"
+}

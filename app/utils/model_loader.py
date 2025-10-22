@@ -1,42 +1,84 @@
-# Load ML model (.pkl)
-import pickle
-def load_model(model_path):
-    """Load a machine learning model from a .pkl file."""
-    with open(model_path, 'rb') as file:
-        model = pickle.load(file)
-    return model
-# Load data from a CSV file
-import pandas as pd
-def load_data(data_path):
-    """Load data from a CSV file."""
-    return pd.read_csv(data_path)
-# Load configuration settings from a JSON file
+"""
+Model loading utilities
+"""
+import joblib
 import json
-def load_config(config_path):
-    """Load configuration settings from a JSON file."""
-    with open(config_path, 'r') as file:
-        config = json.load(file)
-    return config
-# Load a natural language model for explanations
-from langchain.llms import OpenAI
-def load_natural_language_model(model_name):
-    """Load a natural language model for explanations."""
-    return OpenAI(model_name=model_name)
-# Load sample data or user-uploaded data
-def load_sample_data(sample_path):
-    """Load sample data or user-uploaded data."""
-    return pd.read_csv(sample_path)
-# Load a machine learning model from a .pkl file
+from pathlib import Path
+from typing import Any, Dict
+from app.utils.logger import get_logger
+from app.utils.constants import MODEL_PATH, MODEL_INFO_PATH
 
-# Shared utils (model loader, helper functions)
-import os
-def load_shared_utils():
-    """Load shared utilities for the application."""
-    utils_path = os.path.join(os.path.dirname(__file__), 'utils')
-    return utils_path
-# Configurations (model paths, API URLs)
-def load_configurations(config_file):
-    """Load configurations such as model paths and API URLs."""
-    with open(config_file, 'r') as file:
-        return json.load(file)
+logger = get_logger()
+
+class ModelLoader:
+    """Singleton class to load and cache ML model"""
     
+    _instance = None
+    _model = None
+    _model_info = None
+    
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ModelLoader, cls).__new__(cls)
+        return cls._instance
+    
+    def load_model(self, model_path: str = MODEL_PATH) -> Any:
+        """
+        Load trained model from pickle file
+        
+        Args:
+            model_path: Path to model pickle file
+            
+        Returns:
+            Loaded model object
+        """
+        if self._model is None:
+            try:
+                logger.info(f"Loading model from {model_path}")
+                self._model = joblib.load(model_path)
+                logger.success("Model loaded successfully")
+            except Exception as e:
+                logger.error(f"Failed to load model: {e}")
+                raise RuntimeError(f"Model loading failed: {e}")
+        
+        return self._model
+    
+    def load_model_info(self, info_path: str = MODEL_INFO_PATH) -> Dict:
+        """
+        Load model metadata
+        
+        Args:
+            info_path: Path to model info JSON file
+            
+        Returns:
+            Dictionary with model metadata
+        """
+        if self._model_info is None:
+            try:
+                if Path(info_path).exists():
+                    with open(info_path, 'r') as f:
+                        self._model_info = json.load(f)
+                    logger.info("Model info loaded")
+                else:
+                    logger.warning(f"Model info not found at {info_path}")
+                    self._model_info = {}
+            except Exception as e:
+                logger.error(f"Failed to load model info: {e}")
+                self._model_info = {}
+        
+        return self._model_info
+    
+    def get_feature_names(self) -> list:
+        """Get feature names from model info"""
+        info = self.load_model_info()
+        return info.get('feature_names', [])
+    
+    def reload_model(self, model_path: str = MODEL_PATH):
+        """Force reload model (useful for model updates)"""
+        self._model = None
+        self._model_info = None
+        return self.load_model(model_path)
+
+
+# Global instance
+model_loader = ModelLoader()

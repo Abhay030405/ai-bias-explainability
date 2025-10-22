@@ -1,0 +1,18 @@
+[
+  {
+    "age": 35,
+    "income": 75000,
+    "loan_amount": 25000,
+    "credit_score": 720,
+    "employment_years": 8,
+    "debt_to_income": 0.25
+  },
+  {
+    "age": 28,
+    "income": 45000,
+    "loan_amount": 15000,
+    "credit_score": 650,
+    "employment_years": 3,
+    "debt_to_income": 0.45
+  }
+]
