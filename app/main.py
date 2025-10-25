@@ -1,5 +1,3 @@
-# Main FastAPI app entry point
-
 """
 Main FastAPI application for FairLens AI
 """
@@ -16,6 +14,7 @@ sys.path.insert(0, str(project_root))
 from app.config import settings
 from app.utils.logger import get_logger
 from app.api.routes_explain import router as explain_router
+from app.api.routes_bias import router as bias_router  # ⭐ ADD THIS LINE
 
 logger = get_logger()
 
@@ -34,7 +33,9 @@ app = FastAPI(
     
     ### Endpoints:
     * `/api/explain` - Get SHAP and LIME explanations
-    * `/api/bias` - Compute fairness metrics (Phase 2)
+    * `/api/bias` - Compute fairness metrics (JSON input)
+    * `/api/bias/upload` - Compute fairness metrics (CSV upload)
+    * `/api/bias/thresholds` - Get fairness thresholds
     * `/api/summary` - Generate LLM summaries (Phase 3)
     * `/health` - Health check
     """,
@@ -53,6 +54,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(explain_router)
+app.include_router(bias_router)  # ⭐ ADD THIS LINE
 
 @app.on_event("startup")
 async def startup_event():
@@ -89,6 +91,9 @@ async def root():
         "endpoints": {
             "explainability": "/api/explain",
             "features": "/api/explain/features",
+            "bias_json": "/api/bias",
+            "bias_csv": "/api/bias/upload",
+            "bias_thresholds": "/api/bias/thresholds",
             "health": "/health"
         }
     }
