@@ -15,6 +15,7 @@ from app.config import settings
 from app.utils.logger import get_logger
 from app.api.routes_explain import router as explain_router
 from app.api.routes_bias import router as bias_router  # ⭐ ADD THIS LINE
+from app.api.routes_summary import router as summary_router
 
 logger = get_logger()
 
@@ -55,6 +56,7 @@ app.add_middleware(
 # Include routers
 app.include_router(explain_router)
 app.include_router(bias_router)  # ⭐ ADD THIS LINE
+app.include_router(summary_router)
 
 @app.on_event("startup")
 async def startup_event():
@@ -94,10 +96,11 @@ async def root():
             "bias_json": "/api/bias",
             "bias_csv": "/api/bias/upload",
             "bias_thresholds": "/api/bias/thresholds",
+            "summary": "/api/summary",  # ADD THIS
+            "summary_status": "/api/summary/status",  # ADD THIS
             "health": "/health"
         }
     }
-
 
 @app.get("/health", tags=["Health"])
 async def health_check():

@@ -29,11 +29,11 @@ class Settings(BaseSettings):
     reports_dir: str = "reports"
     logs_dir: str = "logs"
     
-    # LLM Configuration (for Phase 3)
-    openai_api_key: Optional[str] = None
+    # LLM Configuration (for Phase 3) 
+    google_api_key: Optional[str] = None
     llm_temperature: float = 0.1
-    llm_model: str = "gpt-3.5-turbo"
-    
+    llm_model: str = "gemini-2.0-flash"
+    llm_max_tokens: int = 1024
     # SHAP Configuration
     shap_sample_size: int = 100
     shap_max_display: int = 10

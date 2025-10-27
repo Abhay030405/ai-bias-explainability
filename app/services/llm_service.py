@@ -60,7 +60,7 @@ class GeminiLLMService:
         try:
             if not self.is_available():
                 logger.error("Gemini model not initialized")
-                return "LLM service not available. Please configure GOOGLE_API_KEY."
+                return "LLM service not available. Please configure GOOGLE_API_KEY in .env file."
             
             logger.info("Generating summary with Gemini")
             
@@ -75,167 +75,213 @@ class GeminiLLMService:
             
         except Exception as e:
             logger.error(f"Gemini generation failed: {e}")
-            raise RuntimeError(f"LLM generation failed: {e}")
+            return f"Error generating summary: {str(e)}"
     
-    def generate_bias_summary(
+    def generate_combined_summary(
         self,
-        bias_metrics: Dict[str, Any],
-        shap_features: Optional[List[str]] = None
-    ) -> str:
+        shap_data: Optional[Dict[str, Any]] = None,
+        lime_data: Optional[Dict[str, Any]] = None,
+        bias_data: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, str]:
         """
-        Generate bias analysis summary
+        Generate comprehensive summary from SHAP, LIME, and bias data
         
         Args:
-            bias_metrics: Dictionary with fairness metrics
-            shap_features: Optional list of top SHAP features
+            shap_data: SHAP explanation results
+            lime_data: LIME explanation results
+            bias_data: Bias detection results
             
         Returns:
-            Natural language summary
+            Dictionary with summary sections
         """
         try:
-            # Build structured prompt
-            prompt = self._build_bias_prompt(bias_metrics, shap_features)
+            summaries = {}
             
-            # Generate summary
-            summary = self.generate_summary(prompt)
+            # Generate explainability summary
+            if shap_data or lime_data:
+                logger.info("Generating explainability summary")
+                exp_prompt = self._build_explainability_prompt(shap_data, lime_data)
+                summaries["explainability_summary"] = self.generate_summary(exp_prompt)
             
-            return summary
+            # Generate bias summary
+            if bias_data:
+                logger.info("Generating bias summary")
+                bias_prompt = self._build_bias_prompt(bias_data)
+                summaries["bias_summary"] = self.generate_summary(bias_prompt)
+            
+            # Generate combined recommendations
+            if (shap_data or lime_data) and bias_data:
+                logger.info("Generating combined recommendations")
+                combined_prompt = self._build_combined_prompt(shap_data, bias_data)
+                summaries["recommendations"] = self.generate_summary(combined_prompt)
+            
+            return summaries
             
         except Exception as e:
-            logger.error(f"Bias summary generation failed: {e}")
-            raise
+            logger.error(f"Combined summary generation failed: {e}")
+            return {"error": str(e)}
     
-    def _build_bias_prompt(
+    def _build_explainability_prompt(
         self,
-        bias_metrics: Dict[str, Any],
-        shap_features: Optional[List[str]] = None
+        shap_data: Optional[Dict[str, Any]],
+        lime_data: Optional[Dict[str, Any]]
     ) -> str:
-        """
-        Build structured prompt for bias analysis
+        """Build prompt for explainability summary"""
         
-        Args:
-            bias_metrics: Fairness metrics
-            shap_features: Top influential features
-            
-        Returns:
-            Formatted prompt string
-        """
-        prompt = """You are an AI fairness analyst. Your task is to analyze the following model fairness metrics and provide actionable recommendations.
+        prompt = """You are an ML explainability expert. Your task is to explain model predictions in simple, non-technical language.
 
-**Important Guidelines:**
-- Base your analysis ONLY on the metrics provided below
-- Do NOT make up or hallucinate any claims
-- Provide concrete, actionable recommendations
-- Keep the summary concise (3-4 sentences)
-- Provide exactly 3 prioritized recommendations
+**IMPORTANT RULES:**
+- Base your analysis ONLY on the data provided below
+- Do NOT make up or hallucinate any information
+- Keep explanations clear and concise (3-4 sentences)
+- Avoid technical jargon
+- Focus on practical insights
 
-**Fairness Metrics:**
 """
         
-        # Add bias metrics
-        if "accuracy_parity" in bias_metrics:
-            prompt += f"\nAccuracy Parity: {bias_metrics['accuracy_parity']}"
+        # Add SHAP data
+        if shap_data and "global_feature_importance" in shap_data:
+            features = shap_data["global_feature_importance"].get("feature_names", [])
+            scores = shap_data["global_feature_importance"].get("importance_scores", [])
+            
+            prompt += "**Top Features Influencing Predictions (by importance):**\n"
+            for feat, score in zip(features[:5], scores[:5]):
+                prompt += f"- {feat}: {score:.4f}\n"
+            prompt += "\n"
         
-        if "demographic_parity" in bias_metrics:
-            prompt += f"\nDemographic Parity: {bias_metrics['demographic_parity']}"
-        
-        if "equal_opportunity" in bias_metrics:
-            prompt += f"\nEqual Opportunity (TPR): {bias_metrics['equal_opportunity']}"
-        
-        if "disparate_impact" in bias_metrics:
-            disparate_impact = bias_metrics['disparate_impact']
-            prompt += f"\nDisparate Impact: {disparate_impact:.3f}"
-            if disparate_impact < 0.8:
-                prompt += " ⚠️ (Below 0.8 threshold - potential bias detected)"
-        
-        # Add SHAP features if available
-        if shap_features:
-            prompt += f"\n\n**Top Influential Features (SHAP):**\n"
-            for i, feat in enumerate(shap_features[:5], 1):
-                prompt += f"{i}. {feat}\n"
+        # Add LIME data
+        if lime_data and "explanations" in lime_data:
+            prompt += "**LIME Feature Contributions (for sample predictions):**\n"
+            first_exp = lime_data["explanations"][0] if lime_data["explanations"] else None
+            if first_exp and "feature_weights" in first_exp:
+                for fw in first_exp["feature_weights"][:5]:
+                    prompt += f"- {fw['feature']}: {fw['weight']:.4f}\n"
+            prompt += "\n"
         
         prompt += """
-
 **Your Task:**
-1. Provide a brief executive summary (3-4 sentences) explaining:
-   - Overall fairness assessment
-   - Which groups are most affected
-   - Severity level (low/medium/high concern)
+Provide a brief explanation (3-4 sentences) that:
+1. Identifies the most important features driving predictions
+2. Explains what this means in practical terms
+3. Highlights any notable patterns or insights
 
-2. Provide exactly 3 actionable recommendations prioritized by impact:
-   - Recommendation 1: [Most important action]
-   - Recommendation 2: [Second priority]
-   - Recommendation 3: [Third priority]
-
-Focus on practical steps like: data collection, reweighting, resampling, feature engineering, threshold adjustment, or model retraining.
-
-**Format your response as:**
-
-SUMMARY:
-[Your 3-4 sentence summary]
-
-RECOMMENDATIONS:
-1. [First recommendation]
-2. [Second recommendation]
-3. [Third recommendation]
+Write in plain English for non-technical stakeholders.
 """
         
         return prompt
     
-    def generate_explainability_summary(
-        self,
-        shap_values: Dict[str, Any],
-        lime_values: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """
-        Generate explainability summary
+    def _build_bias_prompt(self, bias_data: Dict[str, Any]) -> str:
+        """Build prompt for bias analysis summary"""
         
-        Args:
-            shap_values: SHAP explanation results
-            lime_values: Optional LIME explanation results
-            
-        Returns:
-            Natural language explanation
-        """
-        try:
-            prompt = self._build_explainability_prompt(shap_values, lime_values)
-            summary = self.generate_summary(prompt)
-            return summary
-            
-        except Exception as e:
-            logger.error(f"Explainability summary generation failed: {e}")
-            raise
-    
-    def _build_explainability_prompt(
-        self,
-        shap_values: Dict[str, Any],
-        lime_values: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """Build prompt for explainability summary"""
-        
-        prompt = """You are an ML model explainability expert. Explain the following model predictions in simple terms.
+        prompt = """You are an AI fairness analyst. Your task is to analyze model fairness and provide actionable recommendations.
 
-**SHAP Feature Importance:**
+**CRITICAL RULES:**
+- Base your analysis ONLY on the metrics provided below
+- Do NOT make up or invent any claims
+- Provide concrete, actionable recommendations
+- Be clear about the severity of any issues
+- Keep summary concise (3-4 sentences)
+
 """
         
-        # Add SHAP global importance
-        if "global_feature_importance" in shap_values:
-            features = shap_values["global_feature_importance"].get("feature_names", [])
-            scores = shap_values["global_feature_importance"].get("importance_scores", [])
-            
-            prompt += "\nTop Features Influencing Predictions:\n"
-            for feat, score in zip(features[:5], scores[:5]):
-                prompt += f"- {feat}: {score:.4f}\n"
+        # Add sensitive attribute info
+        sensitive_attr = bias_data.get("sensitive_attribute", "unknown")
+        groups = bias_data.get("groups", [])
+        prompt += f"**Sensitive Attribute:** {sensitive_attr}\n"
+        prompt += f"**Groups Analyzed:** {', '.join(map(str, groups))}\n\n"
+        
+        # Add overall metrics
+        overall = bias_data.get("overall_metrics", {})
+        disparate_impact = overall.get("disparate_impact", 1.0)
+        demographic_parity = overall.get("demographic_parity_difference", 0.0)
+        equal_opp = overall.get("equal_opportunity_difference", 0.0)
+        
+        prompt += "**Fairness Metrics:**\n"
+        prompt += f"- Disparate Impact: {disparate_impact:.3f}"
+        if disparate_impact < 0.8:
+            prompt += " ⚠️ (VIOLATION: Below 0.8 threshold)"
+        prompt += "\n"
+        prompt += f"- Demographic Parity Difference: {demographic_parity:.3f}"
+        if demographic_parity > 0.1:
+            prompt += " ⚠️ (VIOLATION: Above 0.1 threshold)"
+        prompt += "\n"
+        prompt += f"- Equal Opportunity Difference: {equal_opp:.3f}"
+        if equal_opp > 0.1:
+            prompt += " ⚠️ (VIOLATION: Above 0.1 threshold)"
+        prompt += "\n\n"
+        
+        # Add group metrics
+        group_metrics = bias_data.get("group_metrics", {})
+        prompt += "**Group-Level Metrics:**\n"
+        for group, metrics in group_metrics.items():
+            prompt += f"\n{group} (n={metrics.get('group_size', 0)}):\n"
+            prompt += f"  - Positive Rate: {metrics.get('positive_rate', 0):.1%}\n"
+            prompt += f"  - Accuracy: {metrics.get('accuracy', 0):.1%}\n"
+            prompt += f"  - True Positive Rate: {metrics.get('true_positive_rate', 0):.1%}\n"
         
         prompt += """
 
 **Your Task:**
-Provide a clear, non-technical explanation (2-3 sentences) of:
-1. Which features have the most impact on predictions
-2. What this means in practical terms
-3. Any notable patterns or insights
+1. **Executive Summary (3-4 sentences):**
+   - Overall fairness assessment
+   - Which groups are most affected
+   - Severity level (low/medium/high concern)
 
-Keep it simple and actionable for non-technical stakeholders.
+2. **Top 3 Actionable Recommendations (prioritized by impact):**
+   Focus on practical steps like:
+   - Data collection strategies
+   - Reweighting or resampling techniques
+   - Feature engineering improvements
+   - Threshold adjustments
+   - Model retraining approaches
+
+**Format your response as:**
+
+EXECUTIVE SUMMARY:
+[Your 3-4 sentence summary]
+
+RECOMMENDATIONS:
+1. [Most important action with specific steps]
+2. [Second priority with specific steps]
+3. [Third priority with specific steps]
+"""
+        
+        return prompt
+    
+    def _build_combined_prompt(
+        self,
+        shap_data: Optional[Dict[str, Any]],
+        bias_data: Dict[str, Any]
+    ) -> str:
+        """Build prompt for combined analysis"""
+        
+        prompt = """You are a senior ML engineer and fairness expert. Provide strategic recommendations based on both model explainability and bias analysis.
+
+**IMPORTANT:**
+- Base recommendations ONLY on provided data
+- Be specific and actionable
+- Prioritize by impact and feasibility
+
+"""
+        
+        # Add top features from SHAP
+        if shap_data and "global_feature_importance" in shap_data:
+            features = shap_data["global_feature_importance"].get("feature_names", [])
+            prompt += f"**Most Influential Features:** {', '.join(features[:3])}\n"
+        
+        # Add bias summary
+        disparate_impact = bias_data.get("overall_metrics", {}).get("disparate_impact", 1.0)
+        sensitive_attr = bias_data.get("sensitive_attribute", "unknown")
+        prompt += f"**Disparate Impact ({sensitive_attr}):** {disparate_impact:.3f}\n"
+        
+        prompt += """
+
+**Task:** Provide 3 prioritized recommendations that address both explainability insights and fairness concerns.
+
+Format:
+1. [Action] - [Why] - [How]
+2. [Action] - [Why] - [How]
+3. [Action] - [Why] - [How]
 """
         
         return prompt
