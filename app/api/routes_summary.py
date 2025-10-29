@@ -4,8 +4,7 @@ API routes for LLM-based summaries and explanations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from typing import Dict, Any, Optional
-
-from app.services.summary_service import summary_service
+from app.services.llm_service import gemini_service as summary_service
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -88,12 +87,12 @@ async def generate_summary(request: SummaryRequest):
         
         # Generate summaries
         logger.info("Generating LLM summaries...")
-        summaries = gemini_service.generate_combined_summary(
+        summaries = summary_service.generate_combined_summary(
             shap_data=request.shap_explanation,
             lime_data=request.lime_explanation,
             bias_data=request.bias_results
         )
-        
+                
         # Check for errors
         if "error" in summaries:
             raise HTTPException(status_code=500, detail=f"Summary generation failed: {summaries['error']}")
@@ -149,9 +148,8 @@ async def generate_bias_summary(bias_results: Dict[str, Any]):
             )
         
         logger.info("Generating bias-only summary")
-        prompt = gemini_service._build_bias_prompt(bias_results)
-        summary = gemini_service.generate_summary(prompt)
-        
+        prompt = summary_service._build_bias_prompt(bias_results)
+        summary = summary_service.generate_summary(prompt)
         return {
             "status": "success",
             "summary": summary,
@@ -189,9 +187,8 @@ async def generate_explainability_summary(
             )
         
         logger.info("Generating explainability-only summary")
-        prompt = gemini_service._build_explainability_prompt(shap_explanation, lime_explanation)
-        summary = gemini_service.generate_summary(prompt)
-        
+        prompt = summary_service._build_explainability_prompt(shap_explanation, lime_explanation)
+        summary = summary_service.generate_summary(prompt)
         return {
             "status": "success",
             "summary": summary,
